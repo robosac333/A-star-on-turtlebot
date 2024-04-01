@@ -12,12 +12,12 @@ import time
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.duration import Duration
 
 '''
 To move the turtlebot on ROS2 Node
 '''
 def move_turtlebot(velocity_list):
-    velocity_list.reverse()
     rclpy.init()
 
     node = rclpy.create_node('turtlebot_controller')
@@ -30,25 +30,33 @@ def move_turtlebot(velocity_list):
 
     r = 0.33
     L = 0.306
-    dt = 10
+    dt = 1
     
     while rclpy.ok():
         # node.get_logger().info('Moving forward... Velocity List: {}'.format(velocity_list))        
         for move in velocity_list:
             linear_velocity, angular_velocity = calculate_velocities(move[0], move[1], r, L)
-            time_sleep = lin
-            msg.angular.z = angular_velocity
-            publisher.publish(msg)
-            time.sleep(time_sleep)
-            msg.linear.x = linear_velocity
-            publisher.publish(msg)
-            time.sleep(time_sleep)
+            # time_sleep = dt
+            # msg.angular.z = angular_velocity
+            # publisher.publish(msg)
+            # time.sleep(time_sleep)
+            # msg.linear.x = linear_velocity
+            # publisher.publish(msg)
+            # time.sleep(time_sleep)
             node.get_logger().info('Publishing velocity: Linear - {}, Angular - {}, Move - {}'.format(linear_velocity, angular_velocity, move))       
-            # D = move[2]
+            # # D = move[2]
             # node.get_logger().info('Time sleep was: {}'.format(D/linear_velocity))
             # # time.sleep(linear_velocity/D)
             # time.sleep(D/linear_velocity)
-
+            now = node.get_clock().now()
+            duration = Duration(seconds=0.1)
+            end_time = now + duration
+            while(node.get_clock().now() < end_time):
+                    msg.linear.x = linear_velocity
+                    
+                    msg.angular.z = angular_velocity
+                    publisher.publish(msg)
+                
         break
     msg.linear.x = 0.0
     msg.angular.z = 0.0
@@ -83,33 +91,72 @@ def possible_moves(tup , step_size, RPM1, RPM2):
 
     moves = []
     
-    for move in move_list:
-        UL,UR= move
-        #t = 0
-        r = 0.33
-        L = 0.306
-        dt = 10
-        UL = 3.14 * (UL / 30)
-        UR = 3.14 * (UR / 30)
-        D = 0
+    # for move in move_list:
+    #     UL,UR= move
+    #     #t = 0
+    #     r = 0.33
+    #     L = 0.306
+    #     dt = 1
+    #     UL = 3.14 * (UL / 30)
+    #     UR = 3.14 * (UR / 30)
+    #     D = 0
 
-        Thetan = Thetai + (r / L) * (UR - UL) * dt
-        if (Thetan == 0):
-            Thetan = 0
-        elif (Thetan == 360):
-            Thetan = 360
-        else :
-           Thetan = Thetan % 360
-        Xn = Xi + 0.5*r * (UL + UR) * np.cos(np.radians(Thetan)) * dt
-        Yn = Yi +  0.5*r * (UL + UR) * np.sin(np.radians(Thetan)) * dt
-        D = math.sqrt(math.pow((Xn - Xi), 2) + math.pow((Yn - Yi), 2))
+    #     Thetan = Thetai + (r / L) * (UR - UL) * dt
+    #     if (Thetan == 0):
+    #         Thetan = 0
+    #     elif (Thetan == 360):
+    #         Thetan = 360
+    #     else :
+    #        Thetan = Thetan % 360
+    #     Xn = Xi + 0.5*r * (UL + UR) * np.cos(np.radians(Thetan)) * dt
+    #     Yn = Yi +  0.5*r * (UL + UR) * np.sin(np.radians(Thetan)) * dt
+    #     D = math.sqrt(math.pow((Xn - Xi), 2) + math.pow((Yn - Yi), 2))
 
            
-        moves.append((Xn,Yn, Thetan, UL, UR, D))
+    #     moves.append((Xn,Yn, Thetan, UL, UR, D))
+    for move in move_list:
+        UL, UR = move
+        t = 0
+        r = 0.105
+        L = 0.16
+        dt = 0.1
 
+        UL = 3.14 * (UL / 30)
+        UR = 3.14 * (UR / 30)
+        # ang_vel = (r / L) * (UR - UL)
+        # lin_vel = 0.5 * r * (UL + UR)
+        newI = Xi
+        newJ = Yi
+        newTheta = 3.14 * Thetai / 180
+        D = 0
+
+        while t < 1:
+            t = t + dt
+            Delta_Xn = 0.5 * r * (UL + UR) * math.cos(newTheta) * dt
+            Delta_Yn = 0.5 * r * (UL + UR) * math.sin(newTheta) * dt
+            newI += Delta_Xn
+            newJ += Delta_Yn
+            newTheta += (r / L) * (UR - UL) * dt
+            D = D + math.sqrt(math.pow(Delta_Xn, 2) + math.pow(Delta_Yn, 2))
+        newTheta = 180 * newTheta / 3.14
+
+        if newTheta > 0:
+            newTheta = newTheta % 360
+        elif newTheta < 0:
+            newTheta = (newTheta + 360) % 360
+
+        newI = getRoundedNumber(newI)
+        newJ = getRoundedNumber(newJ)
+        moves.append((newI, newJ, newTheta, UL, UR, D))
 
     return moves
 
+
+def getRoundedNumber(i):
+    i = 50 * i
+    i = int(i)
+    i = float(i) / 50.0
+    return i
 '''
 To check if theta is less than the threshold
 '''
@@ -410,8 +457,8 @@ if __name__ == '__main__':
     start_theta = 0
     # goal_x = 4000
     # goal_y = 1780
-    goal_x = 2000
-    goal_y = 1000
+    goal_x = 550
+    goal_y = 1500
     RPM1 = 100
     RPM2 = 100
     goal_theta = start_theta
