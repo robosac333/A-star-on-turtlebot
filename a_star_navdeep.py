@@ -30,8 +30,8 @@ class TurtlebotPlanner(Node):
         if self.index < len(self.velocities):
             linear_velocity, angular_velocity = self.velocities[self.index]
             twist_msg = Twist()
-            twist_msg.linear.x = linear_velocity
-            twist_msg.angular.z = angular_velocity
+            twist_msg.linear.x = linear_velocity/2.5
+            twist_msg.angular.z = 10* angular_velocity
             self.vel_pub.publish(twist_msg)
             print(f"Published velocity command: Linear={linear_velocity}, Angular={angular_velocity}")
             self.index += 1
@@ -46,12 +46,12 @@ class TurtlebotPlanner(Node):
 '''
 To move the turtlebot on ROS2 Node
 '''
-def move_turtlebot(path):
+def move_turtlebot(velocity_list):
     rclpy.init()
     planner = TurtlebotPlanner()
 
     # Calculate velocities for the path
-    velocities = calculate_velocities(path)
+    velocities = calculate_velocities(velocity_list)
 
     # Publish velocities
     planner.publish_velocity(velocities)
@@ -86,28 +86,47 @@ def is_move_legal(x, y):
 
 #--------------------------------------
 # Define the maximum linear and angular velocities for your TurtleBot3
-max_linear_velocity = 0.5  # Example value, adjust as needed
-max_angular_velocity = 0.9  # Example value, adjust as needed
+# max_linear_velocity = 1.0  # Example value, adjust as needed
+# max_angular_velocity = 1.0  # Example value, adjust as needed
 
-def calculate_velocities(path):
+# def calculate_velocities(path):
+#     velocities = []
+#     for i in range(len(path) - 1):
+#         current_point = path[i]
+#         next_point = path[i + 1]
+
+#         # Calculate linear velocity based on Euclidean distance between current and next points
+#         distance = np.sqrt((next_point[0] - current_point[0]) ** 2 + (next_point[1] - current_point[1]) ** 2)
+#         linear_velocity = min(distance, max_linear_velocity)  # Limit linear velocity to maximum value
+
+#         # Calculate angular velocity based on change in orientation (theta) between current and next points
+#         delta_theta = next_point[2] - current_point[2]
+#         angular_velocity = np.clip(delta_theta, -max_angular_velocity, max_angular_velocity)  # Clip angular velocity within limits
+#         print(f"Linear velocity: {linear_velocity}, Angular velocity: {angular_velocity}")
+#         velocities.append((linear_velocity, -angular_velocity))
+
+#     # Append stop command (linear velocity = 0.0, angular velocity = 0.0) after all velocities
+#     velocities.append((0.0, 0.0))
+
+#     return velocities
+
+def calculate_velocities(velocity_list):
     velocities = []
-    for i in range(len(path) - 1):
-        current_point = path[i]
-        next_point = path[i + 1]
+    wheelbase = 0.306  
+    wheel_radius = 0.033  
+    print(velocity_list)
+    for rpm in velocity_list:
+        omega_left, omega_right = rpm
+        # Convert RPM to radians per second
+        omega_left = omega_left * (2 * 3.14 / 60)
+        omega_right = omega_right * (2 * 3.14 / 60)
+        linear_velocity = ((omega_left + omega_right) / 2)
+        # Calculate angular velocity
+        angular_velocity = ((omega_left - omega_right) / wheelbase) * wheel_radius
 
-        # Calculate linear velocity based on Euclidean distance between current and next points
-        distance = np.sqrt((next_point[0] - current_point[0]) ** 2 + (next_point[1] - current_point[1]) ** 2)
-        linear_velocity = min(distance, max_linear_velocity)  # Limit linear velocity to maximum value
-
-        # Calculate angular velocity based on change in orientation (theta) between current and next points
-        delta_theta = next_point[2] - current_point[2]
-        angular_velocity = np.clip(delta_theta, -max_angular_velocity, max_angular_velocity)  # Clip angular velocity within limits
-        print(f"Linear velocity: {linear_velocity}, Angular velocity: {angular_velocity}")
         velocities.append((linear_velocity, -angular_velocity))
 
-    # Append stop command (linear velocity = 0.0, angular velocity = 0.0) after all velocities
     velocities.append((0.0, 0.0))
-
     return velocities
 
 '''
@@ -130,8 +149,8 @@ def give_inputs():
 
 def possible_moves(tup , step_size, RPM1, RPM2):
     Xi, Yi, Thetai = tup
-    RPM1 = 10
-    RPM2 = 10
+    RPM1 = 15
+    RPM2 = 15
     move_list = [(0, RPM1), (RPM1, 0), (RPM1, RPM1), (0, RPM2), (RPM2, 0), (RPM2, RPM2), (RPM1, RPM2), (RPM2, RPM1)]
 
     moves = []
@@ -139,7 +158,7 @@ def possible_moves(tup , step_size, RPM1, RPM2):
     for move in move_list:
         UL, UR = move
         t = 0
-        r = 0.33
+        r = 0.033
         L = 0.306
         dt = 0.1
 
@@ -427,6 +446,6 @@ if __name__ == "__main__":
 
     animate_path(coord_list, circle_center, scale)
 
-    move_turtlebot(path)
+    move_turtlebot(velocity_list)
 
     # plt.show()
