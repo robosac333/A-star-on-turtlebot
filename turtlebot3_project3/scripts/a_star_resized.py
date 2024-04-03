@@ -49,7 +49,7 @@ def move_turtlebot(velocity_list):
             # # time.sleep(linear_velocity/D)
             # time.sleep(D/linear_velocity)
             now = node.get_clock().now()
-            duration = Duration(seconds=0.1)
+            duration = Duration(seconds=1)
             end_time = now + duration
             while(node.get_clock().now() < end_time):
                     msg.linear.x = linear_velocity
@@ -175,11 +175,13 @@ To check if the move is legal or not
 '''
 def is_move_legal(tup , img_check, total_clearence, scale):
     x , y = tup
+    print(int(round(y)))
+    print(int(round(x)))
     #pixel_value = img_check[y, x]
 #     pixel_value = tuple(pixel_value)
     if x < int(total_clearence/scale)  or x >= int((6000 - total_clearence)/scale) or y < int(total_clearence/scale) or y >= int((2000 - total_clearence)/scale):
         return False
-    elif tuple(img_check[int(round(y)), int(round(x))]) == (255 , 255 , 255) :
+    elif tuple(img_check[round(int(y)), round(int(x))]) == (255 , 255 , 255) :
         #print(f"Point {point} is in the free region.(here 6)")
         return False
     else :
@@ -219,14 +221,17 @@ def algorithm(start , goal, step_size, image, total_clearence, scale) :
         element = heapq.heappop(queue_open)
         t_c , tup = element
         node , c_2_c = tup
-#         print(node)
+        print(node)
         info = info_dict[node]
         parent , c_2_c_p, UL, UR, D = info
         visited_parent[node] = (parent , UL , UR, D)
+        print(node)
         x , y , theta = node
         theta = theta % 360
-        x_int = int(round(x))
-        y_int = int(round(y))
+        # x_int = int(round(x))
+        # y_int = int(round(y))
+        x_int = x
+        y_int = y       
         #node = (x_int , y_int , theta)
         #figure out where exactly to store the theta value
         if (x_int , y_int) in visited :
@@ -252,9 +257,11 @@ def algorithm(start , goal, step_size, image, total_clearence, scale) :
             #print(path)
             for point in (path) :
                 x, y, theta = point
-                x_int = int(round(x))
-                y_int = int(round(y))
-                cv2.circle(img_ori , (x_int , y_int) , 1 , (0 , 255 , 0) , -1)
+                # x_int = int(round(x))
+                # y_int = int(round(y))
+                x_int = x
+                y_int = y  
+                cv2.circle(img_ori , (int(round(x_int)) , int(round(y_int))) , 1 , (0 , 255 , 0) , -1)
             print('reached')
             img_ori_copy = img_ori.copy()
             flipped_vertical = cv2.flip(img_ori_copy, 0)
@@ -267,15 +274,17 @@ def algorithm(start , goal, step_size, image, total_clearence, scale) :
         for m_v in (moves) :
             x , y, theta, UL, UR, D = m_v
             move = (x , y ,theta)
-            x_int = int(round(x))
-            y_int = int(round(y))
+            # x_int = int(round(x))
+            # y_int = int(round(y))
+            x_int = x
+            y_int = y  
             Bool1 = is_move_legal((x_int , y_int) , image, total_clearence, scale)
             #move = (x_int , y_int , theta)
             if (Bool1 == True):
                 #print(move)
                 Bool2 = is_in_check((x_int , y_int , theta) , visited)
                 if (Bool2 == False):
-                    cv2.circle(img_ori , (x_int , y_int) , 1 , (255 , 0 , 0) , -1)
+                    cv2.circle(img_ori , (int(round(x_int)) , int(round(y_int))) , 1 , (255 , 0 , 0) , -1)
                     move_list.append((move[0] , move[1]))
                     if (ite % 10000) == 0 :
                             img_ori_copy = img_ori.copy()
@@ -389,12 +398,12 @@ if __name__ == '__main__':
     # radius = int(input("Enter the radius of the robot: "))
     # cle = int(input("Enter the clearence: "))
     step_size = 10
-    radius = int(230/scale)
-    cle = int(5/scale)
-    total_clearence = int((cle + radius)/scale)
+    radius = int(round(220/scale))
+    cle = int(round(0/scale))
+    total_clearence = (cle + radius)
 
     # Coordinates of the first polygon
-    x1_polygon1, x2_polygon1, y1_polygon1, y2_polygon1 = int((1500 - total_clearence)/scale) , int((1750 + total_clearence)/scale) , int((1000 - total_clearence)/scale) , int(2000/scale)
+    x1_polygon1, x2_polygon1, y1_polygon1, y2_polygon1 = int((1500/scale - total_clearence)) , int((1750/scale + total_clearence)) , int((1000/scale - total_clearence)) , int(2000/scale)
 
     # Coordinates of the second polygon
     x1_polygon2, x2_polygon2, y1_polygon2, y2_polygon2 = int((2500 - total_clearence)/scale) , int((2750 + total_clearence)/scale) , int(0/scale) , int((1000 + total_clearence)/scale)
@@ -462,14 +471,14 @@ if __name__ == '__main__':
     start_theta = 0
     # goal_x = 4000
     # goal_y = 1780
-    goal_x = 1000/scale
+    goal_x = 5000/scale
     goal_y = 1000/scale
     RPM1 = 100
     RPM2 = 100
     goal_theta = start_theta
 
-    start = (start_x , start_y, start_theta)
-    goal = (goal_x , goal_y, goal_theta)
+    start = (int(start_x) , int(start_y), start_theta)
+    goal = (int(goal_x) , int(goal_y), goal_theta)
     Bool1 = is_move_legal((start[0] , start[1]) , img_check, total_clearence, scale)
     Bool2 = is_move_legal((goal[0] , goal[1]) , img_check, total_clearence, scale)
 
@@ -504,4 +513,4 @@ if __name__ == '__main__':
 
     animate_path(coord_list, circle_center, scale)
 
-    # move_turtlebot(velocity_list)
+    move_turtlebot(velocity_list)

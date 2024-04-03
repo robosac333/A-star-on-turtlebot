@@ -117,8 +117,8 @@ def possible_moves(tup , step_size, RPM1, RPM2):
     for move in move_list:
         UL, UR = move
         t = 0
-        r = 0.105
-        L = 0.16
+        r = 0.33
+        L = 0.306
         dt = 0.1
 
         UL = 3.14 * (UL / 30)
@@ -145,8 +145,8 @@ def possible_moves(tup , step_size, RPM1, RPM2):
         elif newTheta < 0:
             newTheta = (newTheta + 360) % 360
 
-        newI = getRoundedNumber(newI)
-        newJ = getRoundedNumber(newJ)
+        newI = round(newI, 2)
+        newJ = round(newJ, 2)
         moves.append((newI, newJ, newTheta, UL, UR, D))
 
     return moves

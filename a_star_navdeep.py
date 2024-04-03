@@ -7,18 +7,74 @@ import numpy as np
 import math
 from matplotlib.animation import FuncAnimation
 
+import rclpy
+from geometry_msgs.msg import Twist
+from rclpy.duration import Duration
+from rclpy.node import Node
+import threading
+
+class TurtlebotPlanner(Node):
+    def __init__(self):
+        super().__init__('turtlebot_planner')
+        self.vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.rate = self.create_rate(10)  # Create a Rate object with a frequency of 10 Hz
+        self.velocities = []  # Initialize an empty list to store velocities
+        self.index = 0  # Initialize an index to keep track of the current velocity
+
+    def publish_velocity(self, velocities):
+        self.velocities = velocities
+        self.index = 0
+        self.publish_next_velocity()
+
+    def publish_next_velocity(self):
+        if self.index < len(self.velocities):
+            linear_velocity, angular_velocity = self.velocities[self.index]
+            twist_msg = Twist()
+            twist_msg.linear.x = linear_velocity
+            twist_msg.angular.z = angular_velocity
+            self.vel_pub.publish(twist_msg)
+            print(f"Published velocity command: Linear={linear_velocity}, Angular={angular_velocity}")
+            self.index += 1
+
+            # Schedule the next velocity publication after a delay (e.g., 1 second)
+            timer = threading.Timer(1.0, self.publish_next_velocity)
+            timer.start()
+        else:
+            print("All velocities published.")    
+
+
+'''
+To move the turtlebot on ROS2 Node
+'''
+def move_turtlebot(path):
+    rclpy.init()
+    planner = TurtlebotPlanner()
+
+    # Calculate velocities for the path
+    velocities = calculate_velocities(path)
+
+    # Publish velocities
+    planner.publish_velocity(velocities)
+
+    # Spin once to update and call 'publish_velocity' as needed
+    rclpy.spin(planner)
+
+    # Cleanup
+    planner.destroy_node()
+    rclpy.shutdown()
+
 
 def check_for_rect(x, y):
-    return (x >= 1500/1000 - total_clearance and x <= 1750/1000 + total_clearance) and (y >= 1000/1000 - total_clearance and y <= 2000/1000)
+    return (x >= 1500/scale - total_clearance and x <= 1750/scale + total_clearance) and (y >= 1000/scale - total_clearance and y <= 2000/scale)
 
 def check_for_rect1(x, y):
-    return (x >= 2500/1000 - total_clearance and x <= 2750/1000 + total_clearance) and (y >= 0 and y <= 1000/1000 + total_clearance)
+    return (x >= 2500/scale - total_clearance and x <= 2750/scale + total_clearance) and (y >= 0 and y <= 1000/scale + total_clearance)
 
 def check_for_circle(x, y):
-    return math.sqrt((x - 4200/1000)**2 + (y - 1200/1000)**2) <= 600/1000 + total_clearance
+    return math.sqrt((x - 4200/scale)**2 + (y - 1200/scale)**2) <= 600/scale + total_clearance
 
 def check_for_maze(x, y):
-    return (x < total_clearance or x > 5999/1000 - total_clearance) or (y < total_clearance or y > 1999/1000 - total_clearance)
+    return (x < total_clearance or x > 5999/scale - total_clearance) or (y < total_clearance or y > 1999/scale - total_clearance)
 
 def is_move_legal(x, y):
     if check_for_rect(x, y) or check_for_circle(x, y) or check_for_rect1(x, y) or check_for_maze(x, y):
@@ -26,6 +82,33 @@ def is_move_legal(x, y):
         return False
     else:
         return True
+
+
+#--------------------------------------
+# Define the maximum linear and angular velocities for your TurtleBot3
+max_linear_velocity = 0.5  # Example value, adjust as needed
+max_angular_velocity = 0.9  # Example value, adjust as needed
+
+def calculate_velocities(path):
+    velocities = []
+    for i in range(len(path) - 1):
+        current_point = path[i]
+        next_point = path[i + 1]
+
+        # Calculate linear velocity based on Euclidean distance between current and next points
+        distance = np.sqrt((next_point[0] - current_point[0]) ** 2 + (next_point[1] - current_point[1]) ** 2)
+        linear_velocity = min(distance, max_linear_velocity)  # Limit linear velocity to maximum value
+
+        # Calculate angular velocity based on change in orientation (theta) between current and next points
+        delta_theta = next_point[2] - current_point[2]
+        angular_velocity = np.clip(delta_theta, -max_angular_velocity, max_angular_velocity)  # Clip angular velocity within limits
+        print(f"Linear velocity: {linear_velocity}, Angular velocity: {angular_velocity}")
+        velocities.append((linear_velocity, -angular_velocity))
+
+    # Append stop command (linear velocity = 0.0, angular velocity = 0.0) after all velocities
+    velocities.append((0.0, 0.0))
+
+    return velocities
 
 '''
 Ask the user for the initial and goal points
@@ -56,8 +139,8 @@ def possible_moves(tup , step_size, RPM1, RPM2):
     for move in move_list:
         UL, UR = move
         t = 0
-        r = 0.105
-        L = 0.16
+        r = 0.33
+        L = 0.306
         dt = 0.1
 
         UL = 3.14 * (UL / 30)
@@ -69,7 +152,7 @@ def possible_moves(tup , step_size, RPM1, RPM2):
         newTheta = 3.14 * Thetai / 180
         D = 0
 
-        while t < 1:
+        while t <= 1:
             t = t + dt
             Delta_Xn = 0.5 * r * (UL + UR) * math.cos(newTheta) * dt
             Delta_Yn = 0.5 * r * (UL + UR) * math.sin(newTheta) * dt
@@ -84,8 +167,8 @@ def possible_moves(tup , step_size, RPM1, RPM2):
         elif newTheta < 0:
             newTheta = (newTheta + 360) % 360
 
-        newI = getRoundedNumber(newI)
-        newJ = getRoundedNumber(newJ)
+        newI = round(newI, 2)
+        newJ = round(newJ, 2)
         moves.append((newI, newJ, newTheta, UL, UR))
 
 
@@ -136,7 +219,7 @@ def algorithm(start , goal, step_size, total_clearence) :
         info = info_dict[node]
         parent , c_2_c_p, UL, UR = info
         visited_parent[node] = (parent, UL, UR)
-        print(node)
+        # print(node)
         x , y , theta = node
         theta = theta % 360
 #         x_int = int(round(x))
@@ -219,17 +302,17 @@ def algorithm(start , goal, step_size, total_clearence) :
 '''
 Animate the path
 '''
-def animate_path(path, circle_center):
+def animate_path(path, circle_center, scale):
     fig, ax = plt.subplots(figsize=(9,3))
-    ax.set_xlim(0, 6000/1000)
-    ax.set_ylim(0, 2000/1000)
+    ax.set_xlim(0, 6000/scale)
+    ax.set_ylim(0, 2000/scale)
 
     for polygons in obstacles:
         polygon = plt.Polygon(polygons, facecolor="gray", edgecolor='black')
         ax.add_patch(polygon)
 
     # Draw circle
-    circle = plt.Circle(circle_center, radius=600/1000, color='black', alpha=0.5)  # Adjust radius as needed
+    circle = plt.Circle(circle_center, radius=600/scale, color='black', alpha=0.5)  # Adjust radius as needed
     ax.add_artist(circle)
 
     line, = ax.plot([], [], 'b-', lw=2)  # Path line
@@ -254,6 +337,8 @@ if __name__ == "__main__":
     '''
     start_time = time.time()
     
+    scale = 1000
+
     '''
     Defining the Environment
     '''
@@ -261,18 +346,18 @@ if __name__ == "__main__":
     # fig, ax = plt.subplots(figsize=(7,2.5))
 
     # create a Rectangle object
-    rect = patches.Rectangle((1500/1000, 1000/1000), 250/1000, 1000/1000, linewidth=1, edgecolor='r', facecolor='none')
-    rect1 = patches.Rectangle((2500/1000, 0), 250/1000, 1000/1000, linewidth=1, edgecolor='r', facecolor='none')
+    rect = patches.Rectangle((1500/scale, 1000/scale), 250/scale, 1000/scale, linewidth=1, edgecolor='r', facecolor='none')
+    rect1 = patches.Rectangle((2500/scale, 0), 250/scale, 1000/scale, linewidth=1, edgecolor='r', facecolor='none')
 
     # create a Circle object
-    circle = patches.Circle((4200/1000, 1200/1000), 600/1000, linewidth=1, edgecolor='b', facecolor='none')
+    circle = patches.Circle((4200/scale, 1200/scale), 600/scale, linewidth=1, edgecolor='b', facecolor='none')
 
     '''
     Checking for Obstacles
     '''
     robot_radius = 220
     clearance = 0
-    total_clearance = (robot_radius + clearance) / 1000
+    total_clearance = (robot_radius + clearance) / scale
 
     '''
     Plotting the Environment
@@ -286,21 +371,21 @@ if __name__ == "__main__":
     '''
     # start_x, start_y, start_theta, goal_x, goal_y = give_inputs()
     iteration = 0
-    RPM1 = 10
-    RPM2 = 10
+    RPM1 = 15
+    RPM2 = 15
     step_size = 1
-    start_x = 500/1000
+    start_x = 500/scale
     start_x = round(start_x , 4)
-    start_y = 1000/1000
+    start_y = 1000/scale
     start_y = round(start_y , 4)
     start_theta = 0
     # goal_x = 950
     # goal_y = 300
     # goal_x = 100
     # goal_y = 20
-    goal_x = 5750/1000
+    goal_x = 5750/scale
     goal_x = round(goal_x , 4)
-    goal_y = 1000/1000
+    goal_y = 1000/scale
     goal_y = round(goal_y , 4)
     goal_theta = start_theta
 
@@ -328,19 +413,20 @@ if __name__ == "__main__":
     print("Time taken to find the path:", (end_time - start_time)/60, "minutes")
 
     obstacles = [
-        [(1500/1000, 1000/1000), (1500/1000, 2000/1000), (1750/1000, 2000/1000), (1750/1000, 1000/1000)],
+        [(1500/scale, 1000/scale), (1500/scale, 2000/scale), (1750/scale, 2000/scale), (1750/scale, 1000/scale)],
 
-        [(2500/1000, 0), (2500/1000, 1000/1000), (2750/1000, 1000/1000), (2750/1000, 0)]
+        [(2500/scale, 0), (2500/scale, 1000/scale), (2750/scale, 1000/scale), (2750/scale, 0)]
     ]
 
-
-    circle_center = (4200/1000, 1200/1000)
+    circle_center = (4200/scale, 1200/scale)
 
     coord_list = []
     for point in path :
         x , y , theta = point
         coord_list.append((x , y))
 
-    animate_path(coord_list, circle_center)
+    animate_path(coord_list, circle_center, scale)
+
+    move_turtlebot(path)
 
     # plt.show()
