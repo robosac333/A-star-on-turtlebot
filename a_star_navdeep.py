@@ -253,7 +253,7 @@ def algorithm(start , goal, step_size, total_clearence) :
             thetas.append(theta)
             visited[x , y] = thetas
             # visited_parent[node] = parent
-        if (math.sqrt((node[0] - goal[0])**2 + (node[1] - goal[1])**2) <= 1.5)  :
+        if (math.sqrt((node[0] - goal[0])**2 + (node[1] - goal[1])**2) <= 0.2)  :
             print(reached)
             path.append(node)
 
