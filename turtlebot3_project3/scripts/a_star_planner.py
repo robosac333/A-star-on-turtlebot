@@ -1,118 +1,174 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-
-import numpy as np
-import cv2
-import matplotlib.pyplot as plt
+#!/usr/bin/env python3
 import heapq
+import time
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
 import math
 from matplotlib.animation import FuncAnimation
-import time
 
 import rclpy
 from geometry_msgs.msg import Twist
+from rclpy.duration import Duration
+from rclpy.node import Node
+import threading
+
+class TurtlebotMover(Node):
+    def __init__(self):
+        super().__init__('turtlebot_planner')
+        self.vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
+        self.rate = self.create_rate(10)  # Create a Rate object with a frequency of 10 Hz
+        self.velocities = []  # Initialize an empty list to store velocities
+        self.index = 0  # Initialize an index to keep track of the current velocity
+
+    def publish_velocity(self, velocities):
+        self.velocities = velocities
+        self.index = 0
+        self.publish_next_velocity()
+
+    def publish_next_velocity(self):
+        if self.index < len(self.velocities):
+            linear_velocity, angular_velocity = self.velocities[self.index]
+            twist_msg = Twist()
+            twist_msg.linear.x = linear_velocity/2.5
+            twist_msg.angular.z = 10.3* angular_velocity
+            self.vel_pub.publish(twist_msg)
+            print(f"Published velocity command: Linear={linear_velocity}, Angular={angular_velocity}")
+            self.index += 1
+
+            # Schedule the next velocity publication after a delay (e.g., 1 second)
+            timer = threading.Timer(1.0, self.publish_next_velocity)
+            timer.start()
+        else:
+            print("All velocities published.")    
+
 
 '''
 To move the turtlebot on ROS2 Node
 '''
 def move_turtlebot(velocity_list):
-    velocity_list.reverse()
     rclpy.init()
+    mover = TurtlebotMover()
 
-    node = rclpy.create_node('turtlebot_controller')
+    # Calculate velocities for the path
+    velocities = calculate_velocities(velocity_list)
 
-    publisher = node.create_publisher(Twist, 'cmd_vel', 10)
+    # Publish velocities
+    mover.publish_velocity(velocities)
 
-    msg = Twist()
-    linear_velocity = msg.linear.x  
-    angular_velocity = msg.angular.z
+    # Spin once to update and call 'publish_velocity' as needed
+    rclpy.spin(mover)
 
-    r = 0.33
-    L = 0.306
-    dt = 10
-    
-    while rclpy.ok():
-        # node.get_logger().info('Moving forward... Velocity List: {}'.format(velocity_list))        
-        for move in velocity_list:
-            linear_velocity, angular_velocity = calculate_velocities(move[0], move[1], r, L)
-            time_sleep = lin
-            msg.angular.z = angular_velocity
-            publisher.publish(msg)
-            time.sleep(time_sleep)
-            msg.linear.x = linear_velocity
-            publisher.publish(msg)
-            time.sleep(time_sleep)
-            node.get_logger().info('Publishing velocity: Linear - {}, Angular - {}, Move - {}'.format(linear_velocity, angular_velocity, move))       
-            # D = move[2]
-            # node.get_logger().info('Time sleep was: {}'.format(D/linear_velocity))
-            # # time.sleep(linear_velocity/D)
-            # time.sleep(D/linear_velocity)
-
-        break
-    msg.linear.x = 0.0
-    msg.angular.z = 0.0
-    publisher.publish(msg)
-    node.get_logger().info('Stopping the robot...Goal Reached 2')
-    node.destroy_node()
+    # Cleanup
+    mover.destroy_node()
     rclpy.shutdown()
 
-'''
-Calculates the linear and angular velocities of the robot given the RPMs of the left and right wheels
-'''
-def calculate_velocities(rpm_left, rpm_right, wheel_radius, wheelbase):
-    # Convert RPM to radians per second
-    omega_left = rpm_left * (2 * 3.14 / 60)
-    omega_right = rpm_right * (2 * 3.14 / 60)
-    # omega_left = rpm_left
-    # omega_right = rpm_right
-    # Calculate linear velocity
-    # linear_velocity = ((omega_left + omega_right) / 2) * (2 * math.pi * wheel_radius)
-    linear_velocity = ((omega_left + omega_right) / 2)
-    # Calculate angular velocity
-    angular_velocity = ((omega_left - omega_right) / wheelbase) * wheel_radius
 
-    return linear_velocity, angular_velocity
+def check_for_rect(x, y):
+    return (x >= 1500/scale - total_clearance and x <= 1750/scale + total_clearance) and (y >= 1000/scale - total_clearance and y <= 2000/scale)
+
+def check_for_rect1(x, y):
+    return (x >= 2500/scale - total_clearance and x <= 2750/scale + total_clearance) and (y >= 0 and y <= 1000/scale + total_clearance)
+
+def check_for_circle(x, y):
+    return math.sqrt((x - 4200/scale)**2 + (y - 1200/scale)**2) <= 600/scale + total_clearance
+
+def check_for_maze(x, y):
+    return (x < total_clearance or x > 5999/scale - total_clearance) or (y < total_clearance or y > 1999/scale - total_clearance)
+
+def is_move_legal(x, y):
+    if check_for_rect(x, y) or check_for_circle(x, y) or check_for_rect1(x, y) or check_for_maze(x, y):
+        # print("The point is in the obstacle space")
+        return False
+    else:
+        return True
+
+def calculate_velocities(velocity_list):
+    velocities = []
+    wheelbase = 0.306  
+    wheel_radius = 0.033  
+    print(velocity_list)
+    for rpm in velocity_list:
+        omega_left, omega_right = rpm
+        # Convert RPM to radians per second
+        omega_left = omega_left * (2 * 3.14 / 60)
+        omega_right = omega_right * (2 * 3.14 / 60)
+        linear_velocity = ((omega_left + omega_right) / 2)
+        # Calculate angular velocity
+        angular_velocity = ((omega_left - omega_right) / wheelbase) * wheel_radius
+
+        velocities.append((linear_velocity, -angular_velocity))
+
+    velocities.append((0.0, 0.0))
+    return velocities
 
 '''
-To return all the neighbours after a move
+Ask the user for the initial and goal points
 '''
+def give_inputs():
+    x_initial = int(input("Provide the initial x coordinate: "))
+    y_initial = int(input("Provide the initial y coordinate: "))
+    thetas = int(input("Provide the thetas value: "))
+
+    x_goal = int(input("Provide the goal x coordinate: "))
+    y_goal = int(input("Provide the goal y coordinate: "))
+    if is_move_legal(x_initial, y_initial) and is_move_legal(x_goal, y_goal):
+        print("The initial and goal points are in the free space. Executing algorithm")
+    else :
+        print("The initial and goal points are in the obstacle space. Please provide different points.")
+        return give_inputs()
+    return x_initial, y_initial, thetas, x_goal, y_goal
+
+
 def possible_moves(tup , step_size, RPM1, RPM2):
     Xi, Yi, Thetai = tup
+    RPM1 = 15
+    RPM2 = 15
     move_list = [(0, RPM1), (RPM1, 0), (RPM1, RPM1), (0, RPM2), (RPM2, 0), (RPM2, RPM2), (RPM1, RPM2), (RPM2, RPM1)]
 
     moves = []
     
     for move in move_list:
-        UL,UR= move
-        #t = 0
-        r = 0.33
+        UL, UR = move
+        t = 0
+        r = 0.033
         L = 0.306
-        dt = 10
+        dt = 0.1
+
         UL = 3.14 * (UL / 30)
         UR = 3.14 * (UR / 30)
+        newI = Xi
+        newJ = Yi
+        newTheta = 3.14 * Thetai / 180
         D = 0
 
-        Thetan = Thetai + (r / L) * (UR - UL) * dt
-        if (Thetan == 0):
-            Thetan = 0
-        elif (Thetan == 360):
-            Thetan = 360
-        else :
-           Thetan = Thetan % 360
-        Xn = Xi + 0.5*r * (UL + UR) * np.cos(np.radians(Thetan)) * dt
-        Yn = Yi +  0.5*r * (UL + UR) * np.sin(np.radians(Thetan)) * dt
-        D = math.sqrt(math.pow((Xn - Xi), 2) + math.pow((Yn - Yi), 2))
+        while t <= 1:
+            t = t + dt
+            Delta_Xn = 0.5 * r * (UL + UR) * math.cos(newTheta) * dt
+            Delta_Yn = 0.5 * r * (UL + UR) * math.sin(newTheta) * dt
+            newI += Delta_Xn
+            newJ += Delta_Yn
+            newTheta += (r / L) * (UR - UL) * dt
+            # D = D + math.sqrt(math.pow(Delta_Xn, 2) + math.pow(Delta_Yn, 2))
+        newTheta = 180 * newTheta / 3.14
 
-           
-        moves.append((Xn,Yn, Thetan, UL, UR, D))
+        if newTheta > 0:
+            newTheta = newTheta % 360
+        elif newTheta < 0:
+            newTheta = (newTheta + 360) % 360
 
+        newI = round(newI, 2)
+        newJ = round(newJ, 2)
+        moves.append((newI, newJ, newTheta, UL, UR))
 
     return moves
 
-'''
-To check if theta is less than the threshold
-'''
+def getRoundedNumber(i):
+    i = 50 * i
+    i = int(i)
+    i = float(i) / 50.0
+    return i
+
 def is_in_check(tup , visited):
     x , y , theta = tup
     if ((x , y)) in visited :
@@ -123,32 +179,7 @@ def is_in_check(tup , visited):
     return False
 
 
-'''
-To check if the move is legal or not
-'''
-def is_move_legal(tup , img_check, total_clearence):
-    x , y = tup
-    #pixel_value = img_check[y, x]
-#     pixel_value = tuple(pixel_value)
-    if x < total_clearence  or x >= (6000 - total_clearence) or y < total_clearence or y >= (2000 - total_clearence):
-        return False
-    elif tuple(img_check[int(round(y)), int(round(x))]) == (255 , 255 , 255) :
-        #print(f"Point {point} is in the free region.(here 6)")
-        return False
-    else :
-        return True
-
-'''
-Applying A* Algorithm
-'''
-
-def algorithm(start , goal, step_size, image, total_clearence) :
-    #Please note that in the line that follows you will need to change the video driver to an 
-    #appropriate one that is available on your system.
-    fourcc = cv2.VideoWriter_fourcc(*'XVID')
-    ##Please change the path to the desired path.
-    out = cv2.VideoWriter(r'test.mp4', fourcc, 20, (6000, 2000))
-    
+def algorithm(start , goal, step_size, total_clearence) :
     x_start , y_start , theta_start = start
     
     x_goal , y_goal , theta_goal = goal
@@ -162,145 +193,115 @@ def algorithm(start , goal, step_size, image, total_clearence) :
     visited = {}
     visited_parent = {}
     path = []
-    info_dict = {start : ((None , None) , 0 , 0 , 0, 0)}
+    info_dict = {start : ((None , None) , 0, 0, 0)}
     # frame_list = []
-    ite = 0
+    iteration = 0
     move_list = []
-    reached = 0
+    visited_nodes = []
     velocity_list = []
+    reached = 0
     while queue_open :
         element = heapq.heappop(queue_open)
         t_c , tup = element
         node , c_2_c = tup
-#         print(node)
+        # print(node)
         info = info_dict[node]
-        parent , c_2_c_p, UL, UR, D = info
-        visited_parent[node] = (parent , UL , UR, D)
+        parent , c_2_c_p, UL, UR = info
+        visited_parent[node] = (parent, UL, UR)
+        # print(node)
         x , y , theta = node
         theta = theta % 360
-        x_int = int(round(x))
-        y_int = int(round(y))
+#         x_int = int(round(x))
+#         y_int = int(round(y))
         #node = (x_int , y_int , theta)
         #figure out where exactly to store the theta value
-        if (x_int , y_int) in visited :
-            thetas = visited[x_int , y_int]
+        if (x , y) in visited :
+            thetas = visited[x , y]
             thetas.append(theta)
         else:
             thetas = []
             thetas.append(theta)
-            visited[x_int , y_int] = thetas
-#         visited_parent[node] = parent
-        if (math.sqrt((node[0] - goal[0])**2 + (node[1] - goal[1])**2) <= 1.5)  :
-            #print(reached)
+            visited[x , y] = thetas
+            # visited_parent[node] = parent
+        if (math.sqrt((node[0] - goal[0])**2 + (node[1] - goal[1])**2) <= 0.2)  :
+            print(reached)
             path.append(node)
-            #velocity_list = []
+
             while node != start :
-                parent , UL , UR, D = visited_parent[node]
-                velocity_list.append((UL , UR, D))
+                parent, UL, UR = visited_parent[node]
+                velocity_list.append((UL, UR))
                 path.append(parent)
                 node = parent
-            velocity_list.append((0 , 0, 0))
+            
+            velocity_list.append((0, 0))
             path.reverse()
             velocity_list.reverse()
-            #print(path)
-            for point in (path) :
-                x, y, theta = point
-                x_int = int(round(x))
-                y_int = int(round(y))
-                cv2.circle(img_ori , (x_int , y_int) , 1 , (0 , 255 , 0) , -1)
-            print('reached')
-            img_ori_copy = img_ori.copy()
-            flipped_vertical = cv2.flip(img_ori_copy, 0)
-            for i in range(100):
-                out.write(flipped_vertical)
-            reached = 1
-            break
+            # print(path)
+            return visited_parent, reached, path, move_list, velocity_list
+            # animate_path(coord_list, circle_center)
+            # Plot the path nodes
+            # for node in path:
+            #     ax.plot(node[0], node[1], 'ro', alpha=0.3, markersize=1)
 
-        moves = possible_moves((x_int , y_int , theta) , step_size, RPM1, RPM2)
+        moves = possible_moves((x , y , theta) , step_size, RPM1, RPM2)
         for m_v in (moves) :
-            x , y, theta, UL, UR, D = m_v
-            move = (x , y ,theta)
-            x_int = int(round(x))
-            y_int = int(round(y))
-            Bool1 = is_move_legal((x_int , y_int) , image, total_clearence)
+            x , y, theta, UL, UR = m_v
+            move = (x , y , theta)
+#             x_int = int(round(x))
+#             y_int = int(round(y))
+            Bool1 = is_move_legal(x , y)
             #move = (x_int , y_int , theta)
             if (Bool1 == True):
                 #print(move)
-                Bool2 = is_in_check((x_int , y_int , theta) , visited)
+                Bool2 = is_in_check((x , y , theta) , visited)
                 if (Bool2 == False):
-                    cv2.circle(img_ori , (x_int , y_int) , 1 , (255 , 0 , 0) , -1)
                     move_list.append((move[0] , move[1]))
-                    if (ite % 10000) == 0 :
-                            img_ori_copy = img_ori.copy()
-                            flipped_vertical = cv2.flip(img_ori_copy, 0)
-                            out.write(flipped_vertical)
+
+                    # Add the visited node to the list
+                    visited_nodes.append((x, y))
+
+
+                    # Plotting the visited nodes
+                    # if iteration % 3000 == 0:  # Plot every 100th node
+                    #     visited_x = [node[0] for node in visited_nodes]
+                    #     visited_y = [node[1] for node in visited_nodes]
+                    #     ax.plot(visited_x, visited_y, 'go', alpha=0.3, markersize=0.2)
+                    #     plt.pause(0.01)
+
                     if move in info_dict :
                         info = info_dict[move]
-                        parent , c_2_c_p, UL_p , UR_p, D = info
+                        parent , c_2_c_p, UL_p, UR_p = info
                         c_2_c_n = c_2_c + 1
                         if (c_2_c_n < c_2_c_p):
                             #total cost calculation
                             total_cost = c_2_c_n + math.sqrt((move[0] - goal[0]) ** 2 + (move[1] - goal[1]) ** 2)
-                            info_dict[move] = (node , c_2_c_n, UL, UR, D)
+                            info_dict[move] = (node , c_2_c_n, UL, UR)
                             queue_open = [(k, v) for k, v in queue_open if v[0] != move]
                             heapq.heapify(queue_open)
                             heapq.heappush(queue_open , (total_cost , (move , c_2_c_n)))
                     elif move not in info_dict :
                         total_cost = (c_2_c + 1) + math.sqrt((move[0] - goal[0]) ** 2 + (move[1] - goal[1]) ** 2)
-                        info_dict[move] = (node , c_2_c + 1,  UL, UR, D)
+                        info_dict[move] = (node , c_2_c + 1, UL, UR)
                         heapq.heappush(queue_open , (total_cost , (move , c_2_c + 1)))
-        ite += 1
+        iteration += 1
 
-    out.release()
+    #out.release()
     return visited_parent, reached, path, move_list, velocity_list
-
-'''
-Function to plot all the Visited Nodes
-'''
-def animate_search(visited, circle_center):
-    fig, ax = plt.subplots(figsize=(9, 3)) #set animate to 12:5 match map shape
-    ax.set_xlim(0, 6000) #set animate x axis
-    ax.set_ylim(0, 2000) #set animate y axis
-
-    #show obstacles
-    for polygons in obstacles:
-        polygon = plt.Polygon(polygons, facecolor="red", edgecolor='black')
-        ax.add_patch(polygon)
-
-    # Draw circle
-    circle = plt.Circle(circle_center, radius=600, color='red', alpha=0.5)  # Adjust radius as needed
-    ax.add_artist(circle)
-
-    points = ax.scatter([], [], s=1, color='blue') 
-
-    def init():
-        points.set_offsets(np.empty((0, 2))) 
-        return points,
-
-    def update(frame):
-        skip = 50000 #set flames skip
-        frame *= skip 
-        visited_points = np.array(visited[:frame+1])
-        points.set_offsets(visited_points)
-        return points,
-
-    ani = FuncAnimation(fig, update, frames=len(visited), init_func=init, blit=True, interval=1)
-    plt.show()
 
 '''
 Animate the path
 '''
-def animate_path(path, circle_center):
+def animate_path(path, circle_center, scale):
     fig, ax = plt.subplots(figsize=(9,3))
-    ax.set_xlim(0, 6000)
-    ax.set_ylim(0, 2000)
+    ax.set_xlim(0, 6000/scale)
+    ax.set_ylim(0, 2000/scale)
 
     for polygons in obstacles:
         polygon = plt.Polygon(polygons, facecolor="gray", edgecolor='black')
         ax.add_patch(polygon)
 
     # Draw circle
-    circle = plt.Circle(circle_center, radius=600, color='black', alpha=0.5)  # Adjust radius as needed
+    circle = plt.Circle(circle_center, radius=600/scale, color='black', alpha=0.5)  # Adjust radius as needed
     ax.add_artist(circle)
 
     line, = ax.plot([], [], 'b-', lw=2)  # Path line
@@ -319,137 +320,100 @@ def animate_path(path, circle_center):
     ani = FuncAnimation(fig, update, frames=len(path), init_func=init, blit=True, interval=50)
     plt.show()
 
-
-
-if __name__ == '__main__':
-
-    circle_center = (4200, 1200)
-
-    obstacles = [
-        [(1500, 1000), (1500, 2000), (1750, 2000), (1750, 1000)],       
-        [(2500, 0), (2500, 1000), (2750, 1000), (2750, 0)]
-    ]
-
+if __name__ == "__main__":
     '''
-    First Plotting the Bloated Figure
+    Set the time to 0
     '''
-    # step_size = float((input("Enter the step size: ")))
-    # radius = int(input("Enter the radius of the robot: "))
-    # cle = int(input("Enter the clearence: "))
-    step_size = 1
-    radius = 230
-    cle = 5
-    total_clearence = cle + radius
-
-    # Coordinates of the first polygon
-    x1_polygon1, x2_polygon1, y1_polygon1, y2_polygon1 = 1500 - total_clearence , 1750 + total_clearence , 1000 - total_clearence , 2000
-
-    # Coordinates of the second polygon
-    x1_polygon2, x2_polygon2, y1_polygon2, y2_polygon2 = 2500 - total_clearence , 2750 + total_clearence , 0 , 1000 + total_clearence
-
-    # Create a blank image with size 1190x490
-    img_check = np.zeros((2000, 6000 , 3), dtype=np.uint8)
-
-    # Define the vertices of the first polygon
-    pts_polygon1 = np.array([[x1_polygon1, y1_polygon1], [x2_polygon1, y1_polygon1], [x2_polygon1, y2_polygon1], [x1_polygon1, y2_polygon1]], np.int32)
-    pts_polygon1 = pts_polygon1.reshape((-1, 1, 2))
-
-    # Define the vertices of the second polygon
-    pts_polygon2 = np.array([[x1_polygon2, y1_polygon2], [x2_polygon2, y1_polygon2], [x2_polygon2, y2_polygon2], [x1_polygon2, y2_polygon2]], np.int32)
-    pts_polygon2 = pts_polygon2.reshape((-1, 1, 2))
-
-
-    # Fill the first polygon with white color
-    cv2.fillPoly(img_check, [pts_polygon1], (255 , 255 , 255))
-
-    # Fill the second polygon with white color
-    cv2.fillPoly(img_check, [pts_polygon2], (255 , 255 , 255))
-
-    # Draw a circle centered at (4200, 1200) with radius 600
-    circle_center = (4200, 1200)
-    circle_radius = 600 + total_clearence
-    cv2.circle(img_check, circle_center, circle_radius, (255, 255, 255), -1)
-
-    '''
-    Now Plotting the Maze on top of the bloated figure
-    '''
-
-    # Coordinates of the first polygon
-    x1_polygon1, x2_polygon1, y1_polygon1, y2_polygon1 = 1500 , 1750 , 1000 , 2000
+    start_time = time.time()
     
-    # Coordinates of the second polygon
-    x1_polygon2, x2_polygon2, y1_polygon2, y2_polygon2 = 2500, 2750, 0, 1000
-
-    # Create a blank image with size 1190x490
-    img_ori = np.zeros((2000, 6000 ,3), dtype=np.uint8)
-
-    # Define the vertices of the first polygon
-    pts_polygon1 = np.array([[x1_polygon1, y1_polygon1], [x2_polygon1, y1_polygon1], [x2_polygon1, y2_polygon1], [x1_polygon1, y2_polygon1]], np.int32)
-    pts_polygon1 = pts_polygon1.reshape((-1, 1, 2))
-
-    # Define the vertices of the second polygon
-    pts_polygon2 = np.array([[x1_polygon2, y1_polygon2], [x2_polygon2, y1_polygon2], [x2_polygon2, y2_polygon2], [x1_polygon2, y2_polygon2]], np.int32)
-    pts_polygon2 = pts_polygon2.reshape((-1, 1, 2))
-
-    # Fill the first polygon with white color
-    cv2.fillPoly(img_ori, [pts_polygon1], (255 , 255 , 255))
-
-    # Fill the second polygon with white color
-    cv2.fillPoly(img_ori, [pts_polygon2], (255 , 255 , 255))
-
-    # Draw a circle centered at (4200, 1200) with radius 600
-    circle_center = (4200, 1200)
-    circle_radius = 600
-    cv2.circle(img_ori, circle_center, circle_radius, (255 , 255, 255), -1)
+    scale = 1000
 
     '''
-    Initialzation Parameters
+    Defining the Environment
     '''
-    start_x = 500
-    start_y = 1000
+    # create a figure and axis object
+    # fig, ax = plt.subplots(figsize=(7,2.5))
+
+    # create a Rectangle object
+    rect = patches.Rectangle((1500/scale, 1000/scale), 250/scale, 1000/scale, linewidth=1, edgecolor='r', facecolor='none')
+    rect1 = patches.Rectangle((2500/scale, 0), 250/scale, 1000/scale, linewidth=1, edgecolor='r', facecolor='none')
+
+    # create a Circle object
+    circle = patches.Circle((4200/scale, 1200/scale), 600/scale, linewidth=1, edgecolor='b', facecolor='none')
+
+    '''
+    Checking for Obstacles
+    '''
+    robot_radius = 220
+    clearance = 0
+    total_clearance = (robot_radius + clearance) / scale
+
+    '''
+    Plotting the Environment
+    '''
+    # ax.add_patch(rect)
+    # ax.add_patch(rect1)
+    # ax.add_patch(circle)
+
+    '''
+    Write the parameters of the environment
+    '''
+    # start_x, start_y, start_theta, goal_x, goal_y = give_inputs()
+    iteration = 0
+    RPM1 = 15
+    RPM2 = 15
+    step_size = 1
+    start_x = 500/scale
+    start_x = round(start_x , 4)
+    start_y = 1000/scale
+    start_y = round(start_y , 4)
     start_theta = 0
-    # goal_x = 4000
-    # goal_y = 1780
-    goal_x = 2000
-    goal_y = 1000
-    RPM1 = 100
-    RPM2 = 100
+    # goal_x = 950
+    # goal_y = 300
+    # goal_x = 100
+    # goal_y = 20
+    goal_x = 5750/scale
+    goal_x = round(goal_x , 4)
+    goal_y = 1000/scale
+    goal_y = round(goal_y , 4)
     goal_theta = start_theta
 
     start = (start_x , start_y, start_theta)
     goal = (goal_x , goal_y, goal_theta)
-    Bool1 = is_move_legal((start[0] , start[1]) , img_check, total_clearence)
-    Bool2 = is_move_legal((goal[0] , goal[1]) , img_check, total_clearence)
 
-    if Bool1 == True and Bool2 == True :
-        print('correct positions entered algo is executing')
-        visited_parent , reached, path, move_list, velocity_list = algorithm (start , goal, step_size, img_check, total_clearence)
-        if reached == 1 :
-            print('Path is available')
-        else  :
-            print('Did not reach')
-    else :
-        print('please run the code cell again and enter valid start and goal positions')
-
-
-    '''
-    Storing all the path coordinates in a list
-    '''
-    node = path[0]
-    while node != start :
-        parent = visited_parent[node]
-        path.append(parent)
-        node = parent
-    # path.reverse()
+    visited_parent , reached, path, move_list, velocity_list = algorithm (start , goal, step_size, total_clearance)
     #print(path)
-    # print(velocity_list)
+    print(velocity_list)
+    # Set axis labels and limits
+    # ax.set_xlabel('X-axis $(m)$')
+    # ax.set_ylabel('Y-axis $(m)$')
+
+    # ax.set_xlim(0, 6000)
+    # ax.set_ylim(0, 2000)
+
+    # Plot the initial and goal points
+    # ax.plot(start_x, start_y, 'bo', label='Initial Point')
+    # ax.plot(goal_x, goal_y, 'ro', label='Goal Point')
+
+    # Record the end time
+    end_time = time.time()
+
+    # Print the time taken to find the path
+    print("Time taken to find the path:", (end_time - start_time)/60, "minutes")
+
+    obstacles = [
+        [(1500/scale, 1000/scale), (1500/scale, 2000/scale), (1750/scale, 2000/scale), (1750/scale, 1000/scale)],
+
+        [(2500/scale, 0), (2500/scale, 1000/scale), (2750/scale, 1000/scale), (2750/scale, 0)]
+    ]
+
+    circle_center = (4200/scale, 1200/scale)
+
     coord_list = []
     for point in path :
         x , y , theta = point
         coord_list.append((x , y))
 
-    # animate_search(move_list, circle_center)
-
-    animate_path(coord_list, circle_center)
+    animate_path(coord_list, circle_center, scale)
 
     move_turtlebot(velocity_list)
