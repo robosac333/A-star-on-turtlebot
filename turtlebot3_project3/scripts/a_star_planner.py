@@ -345,7 +345,7 @@ if __name__ == "__main__":
     Checking for Obstacles
     '''
     robot_radius = 220
-    clearance = 0
+    clearance = 5
     total_clearance = (robot_radius + clearance) / scale
 
     '''
