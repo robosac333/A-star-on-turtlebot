@@ -23,11 +23,13 @@ from launch import LaunchDescription
 from launch.actions import IncludeLaunchDescription
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration
+from launch.actions import ExecuteProcess
 
 
 def generate_launch_description():
     launch_file_dir = os.path.join(get_package_share_directory('turtlebot3_project3'), 'launch')
     pkg_gazebo_ros = get_package_share_directory('gazebo_ros')
+    # script_file_dir = os.path.join(get_package_share_directory('turtlebot3_project3'), 'scripts')
 
     use_sim_time = LaunchConfiguration('use_sim_time', default='true')
     x_pose = LaunchConfiguration('x_pose', default='0.0')
@@ -69,6 +71,13 @@ def generate_launch_description():
         }.items()
     )
 
+    # Include your custom script
+    # your_script_cmd = ExecuteProcess(
+    #     cmd=['ros2', 'run', 'turtlebot3_project3', 'a_star_planner.py'],
+    #     output='screen',
+    #     env={'ROS_DISTRO': 'galactic', 'USE_SIM_TIME': 'true'}
+    # )
+
     ld = LaunchDescription()
 
     # Add the commands to the launch description
@@ -76,5 +85,6 @@ def generate_launch_description():
     ld.add_action(gzclient_cmd)
     ld.add_action(robot_state_publisher_cmd)
     ld.add_action(spawn_turtlebot_cmd)
+    # ld.add_action(your_script_cmd) 
 
     return ld

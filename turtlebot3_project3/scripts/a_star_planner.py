@@ -17,9 +17,9 @@ class TurtlebotMover(Node):
     def __init__(self):
         super().__init__('turtlebot_planner')
         self.vel_pub = self.create_publisher(Twist, '/cmd_vel', 10)
-        self.rate = self.create_rate(10)  # Create a Rate object with a frequency of 10 Hz
-        self.velocities = []  # Initialize an empty list to store velocities
-        self.index = 0  # Initialize an index to keep track of the current velocity
+        self.rate = self.create_rate(10) 
+        self.velocities = [] 
+        self.index = 0  
 
     def publish_velocity(self, velocities):
         self.velocities = velocities
@@ -30,10 +30,10 @@ class TurtlebotMover(Node):
         if self.index < len(self.velocities):
             linear_velocity, angular_velocity = self.velocities[self.index]
             twist_msg = Twist()
-            twist_msg.linear.x = linear_velocity/2.5
+            twist_msg.linear.x = linear_velocity*12
             twist_msg.angular.z = 10.3* angular_velocity
             self.vel_pub.publish(twist_msg)
-            print(f"Published velocity command: Linear={linear_velocity}, Angular={angular_velocity}")
+            # print(f"Published velocity command: Linear={linear_velocity}, Angular={angular_velocity}")
             self.index += 1
 
             # Schedule the next velocity publication after a delay (e.g., 1 second)
@@ -93,7 +93,7 @@ def calculate_velocities(velocity_list):
         # Convert RPM to radians per second
         omega_left = omega_left * (2 * 3.14 / 60)
         omega_right = omega_right * (2 * 3.14 / 60)
-        linear_velocity = ((omega_left + omega_right) / 2)
+        linear_velocity = ((omega_left + omega_right) / 2) * wheel_radius
         # Calculate angular velocity
         angular_velocity = ((omega_left - omega_right) / wheelbase) * wheel_radius
 
@@ -149,7 +149,6 @@ def possible_moves(tup , step_size, RPM1, RPM2):
             newI += Delta_Xn
             newJ += Delta_Yn
             newTheta += (r / L) * (UR - UL) * dt
-            # D = D + math.sqrt(math.pow(Delta_Xn, 2) + math.pow(Delta_Yn, 2))
         newTheta = 180 * newTheta / 3.14
 
         if newTheta > 0:
@@ -208,12 +207,10 @@ def algorithm(start , goal, step_size, total_clearence) :
         info = info_dict[node]
         parent , c_2_c_p, UL, UR = info
         visited_parent[node] = (parent, UL, UR)
-        # print(node)
+
         x , y , theta = node
         theta = theta % 360
-#         x_int = int(round(x))
-#         y_int = int(round(y))
-        #node = (x_int , y_int , theta)
+
         #figure out where exactly to store the theta value
         if (x , y) in visited :
             thetas = visited[x , y]
@@ -222,7 +219,7 @@ def algorithm(start , goal, step_size, total_clearence) :
             thetas = []
             thetas.append(theta)
             visited[x , y] = thetas
-            # visited_parent[node] = parent
+
         if (math.sqrt((node[0] - goal[0])**2 + (node[1] - goal[1])**2) <= 0.2)  :
             print(reached)
             path.append(node)
@@ -236,21 +233,16 @@ def algorithm(start , goal, step_size, total_clearence) :
             velocity_list.append((0, 0))
             path.reverse()
             velocity_list.reverse()
-            # print(path)
+
             return visited_parent, reached, path, move_list, velocity_list
-            # animate_path(coord_list, circle_center)
-            # Plot the path nodes
-            # for node in path:
-            #     ax.plot(node[0], node[1], 'ro', alpha=0.3, markersize=1)
+
 
         moves = possible_moves((x , y , theta) , step_size, RPM1, RPM2)
         for m_v in (moves) :
             x , y, theta, UL, UR = m_v
             move = (x , y , theta)
-#             x_int = int(round(x))
-#             y_int = int(round(y))
             Bool1 = is_move_legal(x , y)
-            #move = (x_int , y_int , theta)
+
             if (Bool1 == True):
                 #print(move)
                 Bool2 = is_in_check((x , y , theta) , visited)
@@ -259,14 +251,6 @@ def algorithm(start , goal, step_size, total_clearence) :
 
                     # Add the visited node to the list
                     visited_nodes.append((x, y))
-
-
-                    # Plotting the visited nodes
-                    # if iteration % 3000 == 0:  # Plot every 100th node
-                    #     visited_x = [node[0] for node in visited_nodes]
-                    #     visited_y = [node[1] for node in visited_nodes]
-                    #     ax.plot(visited_x, visited_y, 'go', alpha=0.3, markersize=0.2)
-                    #     plt.pause(0.01)
 
                     if move in info_dict :
                         info = info_dict[move]
@@ -331,8 +315,6 @@ if __name__ == "__main__":
     '''
     Defining the Environment
     '''
-    # create a figure and axis object
-    # fig, ax = plt.subplots(figsize=(7,2.5))
 
     # create a Rectangle object
     rect = patches.Rectangle((1500/scale, 1000/scale), 250/scale, 1000/scale, linewidth=1, edgecolor='r', facecolor='none')
@@ -345,15 +327,8 @@ if __name__ == "__main__":
     Checking for Obstacles
     '''
     robot_radius = 220
-    clearance = 5
+    clearance = 0
     total_clearance = (robot_radius + clearance) / scale
-
-    '''
-    Plotting the Environment
-    '''
-    # ax.add_patch(rect)
-    # ax.add_patch(rect1)
-    # ax.add_patch(circle)
 
     '''
     Write the parameters of the environment
@@ -368,10 +343,6 @@ if __name__ == "__main__":
     start_y = 1000/scale
     start_y = round(start_y , 4)
     start_theta = 0
-    # goal_x = 950
-    # goal_y = 300
-    # goal_x = 100
-    # goal_y = 20
     goal_x = 5750/scale
     goal_x = round(goal_x , 4)
     goal_y = 1000/scale
@@ -382,18 +353,8 @@ if __name__ == "__main__":
     goal = (goal_x , goal_y, goal_theta)
 
     visited_parent , reached, path, move_list, velocity_list = algorithm (start , goal, step_size, total_clearance)
-    #print(path)
+
     print(velocity_list)
-    # Set axis labels and limits
-    # ax.set_xlabel('X-axis $(m)$')
-    # ax.set_ylabel('Y-axis $(m)$')
-
-    # ax.set_xlim(0, 6000)
-    # ax.set_ylim(0, 2000)
-
-    # Plot the initial and goal points
-    # ax.plot(start_x, start_y, 'bo', label='Initial Point')
-    # ax.plot(goal_x, goal_y, 'ro', label='Goal Point')
 
     # Record the end time
     end_time = time.time()
