@@ -1,4 +1,7 @@
 # ENPM 661: Path Planning for Autonomous Robots
+
+![A_Star Implementation on Turtlebot](Turtlebot_implementation(2).gif)
+
 ### Instructions for Project3- Phase2
 
 
